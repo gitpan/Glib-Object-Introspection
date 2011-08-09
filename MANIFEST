@@ -1,0 +1,22 @@
+GObjectIntrospection.xs
+lib/Glib/Object/Introspection.pm
+LICENSE
+Makefile.PL
+MANIFEST
+MANIFEST.SKIP
+NEWS
+perl-Glib-Object-Introspection.doap
+README
+t/00-basic-types.t
+t/arrays.t
+t/cairo-integration.t
+t/callbacks.t
+t/closures.t
+t/constants.t
+t/enums.t
+t/hashes.t
+t/inc/setup.pl
+t/objects.t
+t/values.t
+META.yml                                 Module YAML meta-data (added by MakeMaker)
+META.json                                Module JSON meta-data (added by MakeMaker)
