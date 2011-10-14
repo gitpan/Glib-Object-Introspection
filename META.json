@@ -4,7 +4,7 @@
       "unknown"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "ExtUtils::MakeMaker version 6.58, CPAN::Meta::Converter version 2.110930001",
+   "generated_by" : "ExtUtils::MakeMaker version 6.59, CPAN::Meta::Converter version 2.112621",
    "license" : [
       "unknown"
    ],
@@ -22,7 +22,8 @@
          "GObjectIntrospection.xs"
       ],
       "package" : [
-         "MY"
+         "MY",
+         "Glib::Object::Introspection::_FuncWrapper"
       ]
    },
    "prereqs" : {
@@ -36,17 +37,17 @@
             "ExtUtils::Depends" : "0.3",
             "ExtUtils::MakeMaker" : 0,
             "ExtUtils::PkgConfig" : "1",
-            "Glib" : "1.22"
+            "Glib" : "1.24"
          }
       },
       "runtime" : {
          "requires" : {
             "ExtUtils::Depends" : "0.3",
             "ExtUtils::PkgConfig" : "1",
-            "Glib" : "1.22"
+            "Glib" : "1.24"
          }
       }
    },
    "release_status" : "stable",
-   "version" : "0.001"
+   "version" : "0.002"
 }

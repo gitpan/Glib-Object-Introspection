@@ -8,9 +8,9 @@ configure_requires:
   ExtUtils::Depends: 0.3
   ExtUtils::MakeMaker: 0
   ExtUtils::PkgConfig: 1
-  Glib: 1.22
+  Glib: 1.24
 dynamic_config: 1
-generated_by: 'ExtUtils::MakeMaker version 6.58, CPAN::Meta::Converter version 2.110930001'
+generated_by: 'ExtUtils::MakeMaker version 6.59, CPAN::Meta::Converter version 2.112621'
 license: unknown
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -24,8 +24,9 @@ no_index:
     - GObjectIntrospection.xs
   package:
     - MY
+    - Glib::Object::Introspection::_FuncWrapper
 requires:
   ExtUtils::Depends: 0.3
   ExtUtils::PkgConfig: 1
-  Glib: 1.22
-version: 0.001
+  Glib: 1.24
+version: 0.002

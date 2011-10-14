@@ -1,4 +1,4 @@
-# Copyright (C) 2010 Torsten Schoenfeld <kaffeetisch@gmx.de>
+# Copyright (C) 2010-2011 Torsten Schoenfeld <kaffeetisch@gmx.de>
 #
 # This library is free software; you can redistribute it and/or modify it under
 # the terms of the GNU Library General Public License as published by the Free
@@ -25,7 +25,7 @@ use Cwd;
 my %PREREQ_PM = (
   'ExtUtils::Depends'   => 0.300,
   'ExtUtils::PkgConfig' => 1.000,
-  'Glib'                => 1.220,
+  'Glib'                => 1.240,
 );
 
 my %BUILD_REQ = (
@@ -69,6 +69,11 @@ mkdir 'build', 0777;
 
 compile_test_libraries();
 
+ExtUtils::PkgConfig->write_version_macros (
+  "build/gi-version.h",
+  "gobject-introspection-1.0" => "GI",
+);
+
 my $deps = ExtUtils::Depends->new ('Glib::Object::Introspection' => 'Glib');
 $deps->set_inc ($cfg{cflags});
 $deps->set_libs ($cfg{libs});
@@ -88,17 +93,12 @@ WriteMakefile(
     configure_requires => \%PREREQ_PM,
     no_index => {
       file => \@xs_files,
-      package => 'MY',
+      package => [ 'MY', 'Glib::Object::Introspection::_FuncWrapper' ],
     },
   },
 
   $deps->get_makefile_vars,
 );
-
-sub MY::postamble
-{
-  return Glib::MakeHelper->postamble_clean ();
-}
 
 sub compile_test_libraries {
   chdir 'build';
@@ -115,7 +115,7 @@ sub compile_test_libraries {
     my %gio_flags = ExtUtils::PkgConfig->find ('gio-2.0');
     my %glib_flags = ExtUtils::PkgConfig->find ('glib-2.0');
 
-       !system (qq(gcc -shared \\
+       !system (qq(gcc -shared -g \\
                    $cairo_flags{cflags} $cairo_flags{libs} \\
                    $gio_flags{cflags} $gio_flags{libs} \\
                    $testsdir/regress.c \\
@@ -131,25 +131,38 @@ sub compile_test_libraries {
                    1>/dev/null 2>/dev/null))
     && !system (qq(g-ir-compiler Regress-1.0.gir -o Regress-1.0.typelib \\
                    1>/dev/null 2>/dev/null))
-    #&& !system (qq(gcc -shared \\
-    #               $glib_flags{cflags} $glib_flags{libs} \\
-    #               $testsdir/gimarshallingtests.c \\
-    #               -o libgimarshallingtests.so 1>/dev/null 2>/dev/null))
-    #&& !system (qq(LD_LIBRARY_PATH=$build_dir \\
-    #               g-ir-scanner \\
-    #               --include=GObject-2.0 \\
-    #               --namespace=GIMarshallingTests \\
-    #               --symbol-prefix=gi_marshalling_tests --nsversion=1.0 \\
-    #               --quiet --warn-all --warn-error \\
-    #               --library=gimarshallingtests \\
-    #               --output=GIMarshallingTests-1.0.gir \\
-    #               $testsdir/gimarshallingtests.h $testsdir/gimarshallingtests.c \\
-    #               1>/dev/null 2>/dev/null))
-    #&& !system (qq(g-ir-compiler GIMarshallingTests-1.0.gir \\
-    #               -o GIMarshallingTests-1.0.typelib 1>/dev/null 2>/dev/null))
+    && !system (qq(gcc -shared -g \\
+                   $glib_flags{cflags} $glib_flags{libs} \\
+                   $testsdir/gimarshallingtests.c \\
+                   -o libgimarshallingtests.so 1>/dev/null 2>/dev/null))
+    && !system (qq(LD_LIBRARY_PATH=$build_dir \\
+                   g-ir-scanner \\
+                   --include=GObject-2.0 \\
+                   --namespace=GIMarshallingTests \\
+                   --symbol-prefix=gi_marshalling_tests --nsversion=1.0 \\
+                   --quiet --warn-all --warn-error \\
+                   --library=gimarshallingtests \\
+                   --output=GIMarshallingTests-1.0.gir \\
+                   $testsdir/gimarshallingtests.h $testsdir/gimarshallingtests.c \\
+                   1>/dev/null 2>/dev/null))
+    && !system (qq(g-ir-compiler GIMarshallingTests-1.0.gir \\
+                   -o GIMarshallingTests-1.0.typelib 1>/dev/null 2>/dev/null))
   };
 
   print $success ? "OK\n" : "not OK\n";
 
   chdir '..';
+}
+
+package MY; # so that "SUPER" works right
+
+sub test {
+  my $inherited = shift->SUPER::test(@_);
+  # put "build" into LD_LIBRARY_PATH for the tests
+  $inherited =~ s/(test_dynamic :: pure_all)\n\t/$1\n\tLD_LIBRARY_PATH=\${LD_LIBRARY_PATH}:build /;
+  $inherited;
+}
+
+sub postamble {
+  return Glib::MakeHelper->postamble_clean ();
 }
