@@ -29,4 +29,4 @@ requires:
   ExtUtils::Depends: 0.3
   ExtUtils::PkgConfig: 1
   Glib: 1.24
-version: 0.002
+version: 0.003
