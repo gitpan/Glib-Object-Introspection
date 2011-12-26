@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Glib-Object-Introspection
-version:            0.004
+version:            0.005
 abstract:           Dynamically create Perl language bindings
 author:  []
 license:            unknown
