@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2005 muppet
- * Copyright (C) 2005-2011 Torsten Schoenfeld <kaffeetisch@gmx.de>
+ * Copyright (C) 2005-2012 Torsten Schoenfeld <kaffeetisch@gmx.de>
  *
  * This library is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
@@ -423,6 +423,9 @@ _fetch_constant (class, basename, constant)
 	/* FIXME: What am I suppossed to do with the return value? */
 	g_constant_info_get_value (info, &value);
 	RETVAL = arg_to_sv (&value, type_info, GI_TRANSFER_NOTHING, NULL);
+#if GI_CHECK_VERSION (1, 30, 1)
+	g_constant_info_free_value (info, &value);
+#endif
 	g_base_info_unref ((GIBaseInfo *) type_info);
 	g_base_info_unref ((GIBaseInfo *) info);
     OUTPUT:
@@ -635,13 +638,12 @@ _find_vfuncs_with_implementation (class, object_package, target_package)
 	g_base_info_unref (object_info);
 
 void
-_invoke_fallback_vfunc (class, basename, vfunc_package, vfunc_name, target_package, ...)
-	const gchar *basename
+_invoke_fallback_vfunc (class, vfunc_package, vfunc_name, target_package, ...)
 	const gchar *vfunc_package
 	const gchar *vfunc_name
 	const gchar *target_package
     PREINIT:
-	UV internal_stack_offset = 5;
+	UV internal_stack_offset = 4;
 	GIRepository *repository;
 	GIObjectInfo *info;
 	GType gtype;
