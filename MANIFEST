@@ -42,4 +42,5 @@ t/objects.t
 t/structs.t
 t/values.t
 t/vfunc-implementation.t
-META.yml                                 Module meta-data (added by MakeMaker)
+META.yml                                 Module YAML meta-data (added by MakeMaker)
+META.json                                Module JSON meta-data (added by MakeMaker)
