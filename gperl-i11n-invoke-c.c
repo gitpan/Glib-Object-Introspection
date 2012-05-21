@@ -182,10 +182,12 @@ invoke_callable (GICallableInfo *info,
 #endif
 	   )
 	{
-		SV *value = arg_to_sv (&return_value,
-		                       iinfo.return_type_info,
-		                       iinfo.return_type_transfer,
-		                       &iinfo);
+		SV *value;
+		SS_arg_to_sv (value,
+		              &return_value,
+		              iinfo.return_type_info,
+		              iinfo.return_type_transfer,
+		              &iinfo);
 		if (value) {
 			XPUSHs (sv_2mortal (value));
 			n_return_values++;
@@ -214,10 +216,11 @@ invoke_callable (GICallableInfo *info,
 			transfer = g_arg_info_is_caller_allocates (arg_info)
 			         ? GI_TRANSFER_CONTAINER
 			         : g_arg_info_get_ownership_transfer (arg_info);
-			sv = arg_to_sv (iinfo.out_args[i].v_pointer,
-			                iinfo.out_arg_infos[i],
-			                transfer,
-			                &iinfo);
+			SS_arg_to_sv (sv,
+			              iinfo.out_args[i].v_pointer,
+			              iinfo.out_arg_infos[i],
+			              transfer,
+			              &iinfo);
 			if (sv) {
 				XPUSHs (sv_2mortal (sv));
 				n_return_values++;
@@ -264,7 +267,11 @@ handle_automatic_arg (guint pos,
 		if (pos == cinfo->destroy_pos) {
 			dwarn ("  setting automatic arg %d (destroy notify for calllback %p)\n",
 			       pos, cinfo);
-			arg->v_pointer = release_perl_callback;
+			/* If the code pointer is NULL, then the user actually
+			 * specified undef for the callback or nothing at all,
+			 * in which case we must not install our destroy notify
+			 * handler. */
+			arg->v_pointer = cinfo->code ? release_perl_callback : NULL;
 			return;
 		}
 	}

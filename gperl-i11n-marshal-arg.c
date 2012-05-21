@@ -128,6 +128,8 @@ sv_to_arg (SV * sv,
 	}
 }
 
+/* This may call Perl code (via interface_to_sv), so it needs to be wrapped
+ * with PUTBACK/SPAGAIN by the caller. */
 static SV *
 arg_to_sv (GIArgument * arg,
            GITypeInfo * info,
@@ -197,6 +199,8 @@ arg_to_sv (GIArgument * arg,
 		const char *package = gperl_package_from_type (arg->v_size);
 		if (!package)
 			package = g_type_name (arg->v_size);
+		if (!package)
+			return &PL_sv_undef;
 		return newSVpv (package, PL_na);
 	    }
 

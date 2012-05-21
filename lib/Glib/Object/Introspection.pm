@@ -20,7 +20,7 @@ use strict;
 use warnings;
 use Glib;
 
-our $VERSION = 0.008;
+our $VERSION = 0.009;
 
 use Carp;
 $Carp::Internal{(__PACKAGE__)}++;
@@ -81,7 +81,7 @@ sub setup {
     __PACKAGE__->_register_types($basename, $package);
 
   no strict qw(refs);
-  no warnings qw(redefine prototype);
+  no warnings qw(redefine);
 
   foreach my $namespace (keys %{$functions}) {
     my $is_namespaced = $namespace ne "";
@@ -130,7 +130,8 @@ sub setup {
         my ($invocant, $new_value) = @_;
         my $old_value = __PACKAGE__->_get_field($basename, $namespace, $name,
                                                 $invocant);
-        if (defined $new_value) {
+        # If a new value is provided, even if it is undef, update the field.
+        if (scalar @_ > 1) {
           __PACKAGE__->_set_field($basename, $namespace, $name,
                                   $invocant, $new_value);
         }

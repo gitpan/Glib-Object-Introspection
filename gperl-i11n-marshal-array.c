@@ -1,5 +1,7 @@
 /* -*- mode: c; indent-tabs-mode: t; c-basic-offset: 8; -*- */
 
+/* This may call Perl code (via arg_to_sv), so it needs to be wrapped with
+ * PUTBACK/SPAGAIN by the caller. */
 static SV *
 array_to_sv (GITypeInfo *info,
              gpointer pointer,
@@ -34,7 +36,7 @@ array_to_sv (GITypeInfo *info,
                 length = g_type_info_get_array_fixed_size (info);
                 if (length < 0) {
 			guint length_pos = g_type_info_get_array_length (info);
-			g_assert (iinfo != NULL);
+			g_assert (iinfo && iinfo->aux_args);
 			/* FIXME: Is it OK to always use v_size here? */
 			length = iinfo->aux_args[length_pos].v_size;
                 }
@@ -165,5 +167,6 @@ sv_to_array (GITransfer transfer,
 
 	g_base_info_unref ((GIBaseInfo *) param_info);
 
+	/* FIXME: for transfer=nothing, we seem to be leaking the bare array. */
 	return g_array_free (array, FALSE);
 }

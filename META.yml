@@ -1,32 +1,31 @@
----
-abstract: 'Dynamically create Perl language bindings'
-author:
-  - unknown
-build_requires:
-  ExtUtils::MakeMaker: 0
+--- #YAML:1.0
+name:               Glib-Object-Introspection
+version:            0.009
+abstract:           Dynamically create Perl language bindings
+author:  []
+license:            unknown
+distribution_type:  module
 configure_requires:
-  ExtUtils::Depends: 0.3
-  ExtUtils::MakeMaker: 0
-  ExtUtils::PkgConfig: 1
-  Glib: 1.24
-dynamic_config: 1
-generated_by: 'ExtUtils::MakeMaker version 6.62, CPAN::Meta::Converter version 2.113640'
-license: unknown
-meta-spec:
-  url: http://module-build.sourceforge.net/META-spec-v1.4.html
-  version: 1.4
-name: Glib-Object-Introspection
-no_index:
-  directory:
-    - t
-    - inc
-  file:
-    - GObjectIntrospection.xs
-  package:
-    - MY
-    - Glib::Object::Introspection::_FuncWrapper
+    ExtUtils::Depends:    0.3
+    ExtUtils::MakeMaker:  0
+    ExtUtils::PkgConfig:  1
+    Glib:                 1.24
+build_requires:
+    ExtUtils::MakeMaker:  0
 requires:
-  ExtUtils::Depends: 0.3
-  ExtUtils::PkgConfig: 1
-  Glib: 1.24
-version: 0.008
+    ExtUtils::Depends:    0.3
+    ExtUtils::PkgConfig:  1
+    Glib:                 1.24
+no_index:
+    directory:
+        - t
+        - inc
+    file:
+        - GObjectIntrospection.xs
+    package:
+        - MY
+        - Glib::Object::Introspection::_FuncWrapper
+generated_by:       ExtUtils::MakeMaker version 6.57_05
+meta-spec:
+    url:      http://module-build.sourceforge.net/META-spec-v1.4.html
+    version:  1.4
