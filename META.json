@@ -1,0 +1,47 @@
+{
+   "abstract" : "Dynamically create Perl language bindings",
+   "author" : [
+      "Glib::Object::Introspection Team <gtk-perl-list at gnome dot org>"
+   ],
+   "dynamic_config" : 1,
+   "generated_by" : "ExtUtils::MakeMaker version 6.62, CPAN::Meta::Converter version 2.112150",
+   "license" : [
+      "lgpl_2_1"
+   ],
+   "meta-spec" : {
+      "url" : "http://search.cpan.org/perldoc?CPAN::Meta::Spec",
+      "version" : "2"
+   },
+   "name" : "Glib-Object-Introspection",
+   "no_index" : {
+      "directory" : [
+         "t",
+         "inc"
+      ],
+      "file" : [
+         "GObjectIntrospection.xs"
+      ]
+   },
+   "release_status" : "stable",
+   "resources" : {
+      "bugtracker" : {
+         "mailto" : "bug-Glib-Object-Introspection [at] rt.cpan.org",
+         "web" : "http://rt.cpan.org/Public/Dist/Display.html?Name=Glib-Object-Introspection"
+      },
+      "homepage" : "http://gtk2-perl.sourceforge.net",
+      "license" : [
+         "http://www.gnu.org/licenses/lgpl-2.1.html"
+      ],
+      "repository" : {
+         "type" : "git",
+         "url" : "git://git.gnome.org/perl-Glib-Object-Introspection",
+         "web" : "http://git.gnome.org/browse/perl-Glib-Object-Introspection"
+      },
+      "x_MailingList" : "https://mail.gnome.org/mailman/listinfo/gtk-perl-list"
+   },
+   "version" : "0.010",
+   "x_package" : [
+      "MY",
+      "Glib::Object::Introspection::_FuncWrapper"
+   ]
+}
