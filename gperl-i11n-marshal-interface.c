@@ -72,7 +72,7 @@ sv_to_interface (GIArgInfo * arg_info,
 	    case GI_INFO_TYPE_OBJECT:
 	    case GI_INFO_TYPE_INTERFACE:
 		arg->v_pointer = gperl_get_object (sv);
-		if (arg->v_pointer && transfer == GI_TRANSFER_EVERYTHING) {
+		if (arg->v_pointer && transfer >= GI_TRANSFER_CONTAINER) {
 			g_object_ref (arg->v_pointer);
 			if (G_IS_INITIALLY_UNOWNED (arg->v_pointer)) {
 				g_object_force_floating (arg->v_pointer);
@@ -89,12 +89,27 @@ sv_to_interface (GIArgInfo * arg_info,
 			&& !g_type_info_is_pointer (type_info);
 		GType type = get_gtype ((GIRegisteredTypeInfo *) interface);
 		if (!type || type == G_TYPE_NONE) {
+			const gchar *namespace, *name, *package;
+			GType parent_type;
 			dwarn ("    unboxed type\n");
 			g_assert (!need_value_semantics);
-			arg->v_pointer = sv_to_struct (transfer,
-			                               interface,
-			                               info_type,
-			                               sv);
+			/* Find out whether this untyped struct is a member of
+			 * a boxed union before using raw hash-to-struct
+			 * conversion. */
+			name = g_base_info_get_name (interface);
+			namespace = g_base_info_get_namespace (interface);
+			package = get_package_for_basename (namespace);
+			parent_type = find_union_member_gtype (package, name);
+			if (parent_type && parent_type != G_TYPE_NONE) {
+				/* FIXME: Check transfer setting. */
+				arg->v_pointer = gperl_get_boxed_check (
+				                   sv, parent_type);
+			} else {
+				arg->v_pointer = sv_to_struct (transfer,
+				                               interface,
+				                               info_type,
+				                               sv);
+			}
 		} else if (type == G_TYPE_CLOSURE) {
 			/* FIXME: User cannot supply user data. */
 			dwarn ("    closure type\n");
@@ -158,8 +173,9 @@ sv_to_interface (GIArgInfo * arg_info,
 	g_base_info_unref ((GIBaseInfo *) interface);
 }
 
-/* This may call Perl code, so it needs to be wrapped with PUTBACK/SPAGAIN by
- * the caller. */
+/* This may call Perl code (via gperl_new_boxed, gperl_sv_from_value,
+ * struct_to_sv), so it needs to be wrapped with PUTBACK/SPAGAIN by the
+ * caller. */
 static SV *
 interface_to_sv (GITypeInfo* info, GIArgument *arg, gboolean own, GPerlI11nInvocationInfo *iinfo)
 {
@@ -195,7 +211,8 @@ interface_to_sv (GITypeInfo* info, GIArgument *arg, gboolean own, GPerlI11nInvoc
 		} else if (type == G_TYPE_VALUE) {
 			dwarn ("    value type\n");
 			sv = gperl_sv_from_value (arg->v_pointer);
-			/* FIXME: Check 'own'. */
+			if (own)
+				g_boxed_free (type, arg->v_pointer);
 		} else {
 			dwarn ("    boxed type: %d (%s)\n",
 			       type, g_type_name (type));

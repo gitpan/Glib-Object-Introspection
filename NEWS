@@ -1,3 +1,10 @@
+Overview of changes in Glib::Object::Introspection 0.011
+========================================================
+
+* Improve handling of boxed unions, like GdkEvent.
+* Add support for building the test libs on MSWin32.
+* Properly specify our dependencies.
+
 Overview of changes in Glib::Object::Introspection 0.010
 ========================================================
 

@@ -26,6 +26,13 @@
 #include <girepository.h>
 #include <girffi.h>
 
+/* #define NOISY */
+#ifdef NOISY
+# define dwarn(...) warn(__VA_ARGS__)
+#else
+# define dwarn(...)
+#endif
+
 /* ------------------------------------------------------------------------- */
 
 typedef struct {
@@ -151,6 +158,7 @@ static GIFunctionInfo * get_function_info (GIRepository *repository,
 static GIFieldInfo * get_field_info (GIBaseInfo *info,
                                      const gchar *field_name);
 static GType get_gtype (GIRegisteredTypeInfo *info);
+static const gchar * get_package_for_basename (const gchar *basename);
 
 
 /* marshallers */
@@ -211,6 +219,11 @@ static void store_fields (HV *fields, GIBaseInfo *info, GIInfoType info_type);
 static SV * get_field (GIFieldInfo *field_info, gpointer mem, GITransfer transfer);
 static void set_field (GIFieldInfo *field_info, gpointer mem, GITransfer transfer, SV *value);
 
+/* unions */
+static SV * rebless_union_sv (GType type, const char *package, gpointer mem, gboolean own);
+static void associate_union_members_with_gtype (GIUnionInfo *info, const gchar *package, GType type);
+static GType find_union_member_gtype (const gchar *package, const gchar *namespace);
+
 /* methods */
 static void store_methods (HV *namespaced_functions, GIBaseInfo *info, GIInfoType info_type);
 
@@ -226,23 +239,15 @@ static void generic_class_init (GIObjectInfo *info, const gchar *target_package,
 static void call_carp_croak (const char *msg);
 
 /* interface_to_sv and its callers might invoke Perl code, so any xsub invoking
- * them needs to save the stack.  these wrappers do this automatically. */
-#define SS_arg_to_sv(sv, arg, info, transfer, iinfo)	\
-	PUTBACK;					\
-	sv = arg_to_sv (arg, info, transfer, iinfo);	\
-	SPAGAIN;
-
-#define SS_get_field(sv, field_info, mem, transfer)	\
-	PUTBACK;					\
-	sv = get_field (field_info, mem, transfer);	\
-	SPAGAIN;
-
-/* #define NOISY */
-#ifdef NOISY
-# define dwarn(...) warn(__VA_ARGS__)
-#else
-# define dwarn(...)
-#endif
+ * them needs to save the stack.  this wrapper does this automatically. */
+#define SAVED_STACK_SV(expr)			\
+	({					\
+		SV *_saved_stack_sv;		\
+		PUTBACK;			\
+		_saved_stack_sv = expr;		\
+		SPAGAIN;			\
+		_saved_stack_sv;		\
+	})
 
 /* ------------------------------------------------------------------------- */
 
@@ -264,6 +269,7 @@ static void call_carp_croak (const char *msg);
 #include "gperl-i11n-marshal-struct.c"
 #include "gperl-i11n-method.c"
 #include "gperl-i11n-size.c"
+#include "gperl-i11n-union.c"
 #include "gperl-i11n-vfunc-interface.c"
 #include "gperl-i11n-vfunc-object.c"
 
@@ -391,9 +397,25 @@ _register_types (class, namespace, package)
 
 		    case GI_INFO_TYPE_BOXED:
 		    case GI_INFO_TYPE_STRUCT:
-		    case GI_INFO_TYPE_UNION:
 			gperl_register_boxed (type, full_package, NULL);
 			break;
+
+		    case GI_INFO_TYPE_UNION:
+		    {
+			GPerlBoxedWrapperClass *my_wrapper_class;
+			GPerlBoxedWrapperClass *default_wrapper_class;
+			default_wrapper_class = gperl_default_boxed_wrapper_class ();
+			/* FIXME: We leak my_wrapper_class here.  The problem
+			 * is that gperl_register_boxed does not copy the
+			 * contents of the wrapper class but instead assumes
+			 * that the memory passed in will always be valid. */
+			my_wrapper_class = g_new (GPerlBoxedWrapperClass, 1);
+			*my_wrapper_class = *default_wrapper_class;
+			my_wrapper_class->wrap = rebless_union_sv;
+			gperl_register_boxed (type, full_package, my_wrapper_class);
+			associate_union_members_with_gtype (info, package, type);
+			break;
+		    }
 
 		    case GI_INFO_TYPE_ENUM:
 		    case GI_INFO_TYPE_FLAGS:
@@ -436,7 +458,8 @@ _fetch_constant (class, basename, constant)
 	type_info = g_constant_info_get_type (info);
 	/* FIXME: What am I suppossed to do with the return value? */
 	g_constant_info_get_value (info, &value);
-	SS_arg_to_sv (RETVAL, &value, type_info, GI_TRANSFER_NOTHING, NULL);
+	/* No PUTBACK/SPAGAIN needed here. */
+	RETVAL = arg_to_sv (&value, type_info, GI_TRANSFER_NOTHING, NULL);
 #if GI_CHECK_VERSION (1, 30, 1)
 	g_constant_info_free_value (info, &value);
 #endif
@@ -468,11 +491,19 @@ _get_field (class, basename, namespace, field, invocant)
 		ccroak ("Could not find field '%s' in namespace '%s'",
 		        field, namespace)
 	invocant_type = get_gtype (namespace_info);
+	if (invocant_type == G_TYPE_NONE) {
+		/* If the invocant has no associated GType, try to look at the
+		 * {$package}::_i11n_gtype SV.  It gets set for members of
+		 * boxed unions. */
+		const gchar *package = get_package_for_basename (basename);
+		invocant_type = find_union_member_gtype (package, namespace);
+	}
 	if (!g_type_is_a (invocant_type, G_TYPE_BOXED))
-		ccroak ("Unable to handle field access for type '%s'",
-		        g_type_name (invocant_type));
+		ccroak ("Unable to handle access to field '%s' for type '%s'",
+		        field, g_type_name (invocant_type));
 	boxed_mem = gperl_get_boxed_check (invocant, invocant_type);
-	SS_get_field (RETVAL, field_info, boxed_mem, GI_TRANSFER_NOTHING);
+	/* No PUTBACK/SPAGAIN needed here. */
+	RETVAL = get_field (field_info, boxed_mem, GI_TRANSFER_NOTHING);
 	g_base_info_unref (field_info);
 	g_base_info_unref (namespace_info);
     OUTPUT:
@@ -502,9 +533,16 @@ _set_field (class, basename, namespace, field, invocant, new_value)
 		ccroak ("Could not find field '%s' in namespace '%s'",
 		        field, namespace)
 	invocant_type = get_gtype (namespace_info);
+	if (invocant_type == G_TYPE_NONE) {
+		/* If the invocant has no associated GType, try to look at the
+		 * {$package}::_i11n_gtype SV.  It gets set for members of
+		 * boxed unions. */
+		const gchar *package = get_package_for_basename (basename);
+		invocant_type = find_union_member_gtype (package, namespace);
+	}
 	if (!g_type_is_a (invocant_type, G_TYPE_BOXED))
-		ccroak ("Unable to handle field access for type '%s'",
-		        g_type_name (invocant_type));
+		ccroak ("Unable to handle access to field '%s' for type '%s'",
+		        field, g_type_name (invocant_type));
 	boxed_mem = gperl_get_boxed_check (invocant, invocant_type);
 	/* Conceptually, we need to always transfer ownership to the boxed
 	 * object for things like strings.  The memory would then be freed by
