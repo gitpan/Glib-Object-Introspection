@@ -31,7 +31,12 @@
          "requires" : {
             "ExtUtils::Depends" : "0.3",
             "ExtUtils::PkgConfig" : "1",
-            "Glib" : "1.24"
+            "Glib" : "1.27"
+         }
+      },
+      "runtime" : {
+         "requires" : {
+            "Glib" : "1.27"
          }
       }
    },
@@ -52,5 +57,5 @@
       },
       "x_MailingList" : "https://mail.gnome.org/mailman/listinfo/gtk-perl-list"
    },
-   "version" : "0.011"
+   "version" : "0.012"
 }
