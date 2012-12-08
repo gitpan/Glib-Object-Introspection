@@ -8,7 +8,7 @@ configure_requires:
   ExtUtils::PkgConfig: 1
   Glib: 1.27
 dynamic_config: 1
-generated_by: 'ExtUtils::MakeMaker version 6.6302, CPAN::Meta::Converter version 2.120921'
+generated_by: 'ExtUtils::MakeMaker version 6.62, CPAN::Meta::Converter version 2.112150'
 license: lgpl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -31,4 +31,4 @@ resources:
   license: http://www.gnu.org/licenses/lgpl-2.1.html
   repository: git://git.gnome.org/perl-Glib-Object-Introspection
   x_MailingList: https://mail.gnome.org/mailman/listinfo/gtk-perl-list
-version: 0.012
+version: 0.013
