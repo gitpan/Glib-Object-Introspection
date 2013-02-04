@@ -1,5 +1,23 @@
 /* -*- mode: c; indent-tabs-mode: t; c-basic-offset: 8; -*- */
 
+static GIFunctionInfo *
+_find_enum_method (GIEnumInfo *info, const gchar *method)
+{
+#if GI_CHECK_VERSION (1, 29, 17)
+	gint n_methods;
+	gint i;
+	n_methods = g_enum_info_get_n_methods (info);
+	for (i = 0; i < n_methods; i++) {
+		GIFunctionInfo *method_info =
+			g_enum_info_get_method (info, i);
+		if (strEQ (g_base_info_get_name (method_info), method))
+			return method_info;
+		g_base_info_unref (method_info);
+	}
+#endif
+	return NULL;
+}
+
 /* Caller owns return value */
 static GIFunctionInfo *
 get_function_info (GIRepository *repository,
@@ -35,10 +53,16 @@ get_function_info (GIRepository *repository,
 				method);
 			break;
                     case GI_INFO_TYPE_UNION:
-                        function_info = g_union_info_find_method (
-                                (GIUnionInfo *) namespace_info,
-                                method);
-                        break;
+			function_info = g_union_info_find_method (
+				(GIUnionInfo *) namespace_info,
+				method);
+			break;
+		    case GI_INFO_TYPE_ENUM:
+		    case GI_INFO_TYPE_FLAGS:
+			function_info = _find_enum_method (
+				(GIEnumInfo *) namespace_info,
+				method);
+			break;
 		    default:
 			ccroak ("Base info for namespace %s has incorrect type",
 			       namespace);
@@ -112,6 +136,34 @@ get_field_info (GIBaseInfo *info, const gchar *field_name)
 	return NULL;
 }
 
+/* Caller owns return value */
+static GISignalInfo *
+get_signal_info (GIBaseInfo *container_info, const gchar *signal_name)
+{
+	if (GI_IS_OBJECT_INFO (container_info)) {
+		return g_object_info_find_signal (container_info, signal_name);
+	} else if (GI_IS_INTERFACE_INFO (container_info)) {
+#if GI_CHECK_VERSION (1, 35, 4)
+		return g_interface_info_find_signal (container_info, signal_name);
+#else
+{
+		gint n_signals;
+		gint i;
+		n_signals = g_interface_info_get_n_signals (container_info);
+		for (i = 0; i < n_signals; i++) {
+			GISignalInfo *siginfo =
+				g_interface_info_get_signal (container_info, i);
+			if (strEQ (g_base_info_get_name (siginfo), signal_name))
+				return siginfo;
+			g_base_info_unref (siginfo);
+		}
+		return NULL;
+}
+#endif
+	}
+	return NULL;
+}
+
 static GType
 get_gtype (GIRegisteredTypeInfo *info)
 {
@@ -149,4 +201,13 @@ get_package_for_basename (const gchar *basename)
 	svp = hv_fetch (basename_to_package, basename, strlen (basename), 0);
 	g_assert (svp && gperl_sv_is_defined (*svp));
 	return SvPV_nolen (*svp);
+}
+
+static gboolean
+is_forbidden_sub_name (const gchar *name)
+{
+	HV *forbidden_sub_names =
+		get_hv ("Glib::Object::Introspection::_FORBIDDEN_SUB_NAMES", 0);
+	g_assert (forbidden_sub_names);
+	return hv_exists (forbidden_sub_names, name, strlen (name));
 }

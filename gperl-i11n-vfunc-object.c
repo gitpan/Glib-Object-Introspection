@@ -1,6 +1,17 @@
 /* -*- mode: c; indent-tabs-mode: t; c-basic-offset: 8; -*- */
 
 static void
+store_objects_with_vfuncs (AV *objects_with_vfuncs, GIObjectInfo *info)
+{
+	if (g_object_info_get_n_vfuncs (info) <= 0)
+		return;
+	av_push (objects_with_vfuncs,
+	         newSVpv (g_base_info_get_name (info), PL_na));
+}
+
+/* ------------------------------------------------------------------------- */
+
+static void
 generic_class_init (GIObjectInfo *info, const gchar *target_package, gpointer class)
 {
 	GIStructInfo *struct_info;
@@ -13,6 +24,7 @@ generic_class_init (GIObjectInfo *info, const gchar *target_package, gpointer cl
 		GIFieldInfo *field_info;
 		gint field_offset;
 		GITypeInfo *field_type_info;
+		GIBaseInfo *field_interface_info;
 		gchar *perl_method_name;
 		GPerlI11nPerlCallbackInfo *callback_info;
 
@@ -20,6 +32,14 @@ generic_class_init (GIObjectInfo *info, const gchar *target_package, gpointer cl
 		vfunc_name = g_base_info_get_name (vfunc_info);
 
 		perl_method_name = g_ascii_strup (vfunc_name, -1);
+		if (is_forbidden_sub_name (perl_method_name)) {
+			/* If the method name coincides with the name of one of
+			 * perl's special subs, add "_VFUNC". */
+			gchar *replacement = g_strconcat (perl_method_name, "_VFUNC", NULL);
+			g_free (perl_method_name);
+			perl_method_name = replacement;
+		}
+
 		{
 			/* If there is no implementation of this vfunc at INIT
 			 * time, we assume that the intention is to provide no
@@ -28,6 +48,8 @@ generic_class_init (GIObjectInfo *info, const gchar *target_package, gpointer cl
 			HV * stash = gv_stashpv (target_package, 0);
 			GV * slot = gv_fetchmethod (stash, perl_method_name);
 			if (!slot) {
+				dwarn ("generic_class_init: skipping vfunc %s.%s because it has no implementation\n",
+				      g_base_info_get_name (info), vfunc_name);
 				g_base_info_unref (vfunc_info);
 				g_free (perl_method_name);
 				continue;
@@ -39,15 +61,18 @@ generic_class_init (GIObjectInfo *info, const gchar *target_package, gpointer cl
 		g_assert (field_info);
 		field_offset = g_field_info_get_offset (field_info);
 		field_type_info = g_field_info_get_type (field_info);
+		field_interface_info = g_type_info_get_interface (field_type_info);
 
+		/* callback_info takes over ownership of perl_method_name. */
 		callback_info = create_perl_callback_closure_for_named_sub (
-		                  field_type_info, perl_method_name);
-		dwarn ("installing vfunc %s as %s at offset %d (vs. %d) inside %p\n",
-		       vfunc_name, perl_method_name,
+		                  field_interface_info, perl_method_name);
+		dwarn ("generic_class_init: installing vfunc %s.%s as %s at offset %d (vs. %d) inside %p\n",
+		       g_base_info_get_name (info), vfunc_name, perl_method_name,
 		       field_offset, g_vfunc_info_get_offset (vfunc_info),
 		       class);
 		G_STRUCT_MEMBER (gpointer, class, field_offset) = callback_info->closure;
 
+		g_base_info_unref (field_interface_info);
 		g_base_info_unref (field_type_info);
 		g_base_info_unref (field_info);
 		g_base_info_unref (vfunc_info);

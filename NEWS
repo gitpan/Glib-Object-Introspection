@@ -1,3 +1,21 @@
+Overview of changes in Glib::Object::Introspection 0.014
+========================================================
+
+* Implement generic signal marshalling.
+* Implement a generic constructor for boxed types and install it as
+  Glib::Boxed::new.
+* Generate error messages when functions are passed an incorrect number of
+  parameters.
+* Avoid using vfunc names that coincide with special Perl subs.  This fixes
+  double-frees occurring for subclasses of Gtk3::Widget.
+* Rework the way fallback vfuncs are installed.
+* Correctly marshal out/in-out args when invoking Perl code and fix some other
+  related bugs.  This makes it possible to implement complicated interfaces
+  such as Gtk3::TreeModel.
+* Allow enums and flags to have class functions.
+* Add API to manually convert between SVs and enums.
+* Plug a few memory leaks.
+
 Overview of changes in Glib::Object::Introspection 0.013
 ========================================================
 

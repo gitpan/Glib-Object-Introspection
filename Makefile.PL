@@ -24,7 +24,7 @@ use Config;
 use Cwd;
 
 my %RUNTIME_REQ_PM = (
-  'Glib' => 1.270,
+  'Glib' => 1.280,
 );
 
 my %CONFIG_REQ_PM = (
@@ -54,7 +54,7 @@ my %meta_merge = (
         },
         author              =>
             ['Glib::Object::Introspection Team <gtk-perl-list at gnome dot org>'],
-        release_status      => 'stable',
+        release_status      => 'unstable', # FIXME?
         # valid values: https://metacpan.org/module/CPAN::Meta::Spec#license
         license             => 'lgpl_2_1',
         resources => {

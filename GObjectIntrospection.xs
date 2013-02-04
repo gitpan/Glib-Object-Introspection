@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2005 muppet
- * Copyright (C) 2005-2012 Torsten Schoenfeld <kaffeetisch@gmx.de>
+ * Copyright (C) 2005-2013 Torsten Schoenfeld <kaffeetisch@gmx.de>
  *
  * This library is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
@@ -48,6 +48,10 @@ typedef struct {
 	/* ... or a sub name to be called as a method on the invocant. */
 	gchar *sub_name;
 
+	/* these are currently only used for signal handler invocation. */
+	gboolean swap_data;
+	SV *args_converter;
+
 	guint data_pos;
 	guint destroy_pos;
 
@@ -55,6 +59,11 @@ typedef struct {
 
 	gpointer priv; /* perl context */
 } GPerlI11nPerlCallbackInfo;
+
+typedef struct {
+	GISignalInfo *interface;
+	SV *args_converter;
+} GPerlI11nPerlSignalInfo;
 
 typedef struct {
 	GICallableInfo *interface;
@@ -75,16 +84,23 @@ typedef struct {
 } GPerlI11nArrayInfo;
 
 /* This stores information that the different marshallers might need to
- * communicate to each other. */
+ * communicate to each other.  This struct is used for invoking C and Perl
+ * code. */
 typedef struct {
 	GICallableInfo *interface;
+	const gchar *target_package;
+	const gchar *target_namespace;
+	const gchar *target_function;
 
 	gboolean is_function;
 	gboolean is_vfunc;
 	gboolean is_callback;
+	gboolean is_signal;
 
 	guint n_args;
 	guint n_invoke_args;
+	guint n_expected_args;
+	guint n_nullable_args;
 	guint n_given_args;
 	gboolean is_constructor;
 	gboolean is_method;
@@ -115,8 +131,8 @@ typedef struct {
 } GPerlI11nInvocationInfo;
 
 /* callbacks */
-static GPerlI11nPerlCallbackInfo * create_perl_callback_closure_for_named_sub (GITypeInfo *cb_type, gchar *sub_name);
-static GPerlI11nPerlCallbackInfo * create_perl_callback_closure (GITypeInfo *cb_type, SV *code);
+static GPerlI11nPerlCallbackInfo * create_perl_callback_closure_for_named_sub (GIBaseInfo *cb_info, gchar *sub_name);
+static GPerlI11nPerlCallbackInfo * create_perl_callback_closure (GIBaseInfo *cb_info, SV *code);
 static void attach_perl_callback_data (GPerlI11nPerlCallbackInfo *info, SV *data);
 static void release_perl_callback (gpointer data);
 
@@ -125,30 +141,27 @@ static void attach_c_callback_data (GPerlI11nCCallbackInfo *info, gpointer data)
 static void release_c_callback (gpointer data);
 
 /* invocation */
-static void invoke_callback (ffi_cif* cif,
-                             gpointer resp,
-                             gpointer* args,
-                             gpointer userdata);
+#if GI_CHECK_VERSION (1, 33, 10)
+static void invoke_perl_signal_handler (ffi_cif* cif,
+                                        gpointer resp,
+                                        gpointer* args,
+                                        gpointer userdata);
+#endif
 
-static void invoke_callable (GICallableInfo *info,
-                             gpointer func_pointer,
-                             SV **sp, I32 ax, SV **mark, I32 items, /* these correspond to dXSARGS */
-                             UV internal_stack_offset);
-static gpointer allocate_out_mem (GITypeInfo *arg_type);
-static void handle_automatic_arg (guint pos,
-                                  GIArgument * arg,
-                                  GPerlI11nInvocationInfo * invocation_info);
+static void invoke_perl_code (ffi_cif* cif,
+                              gpointer resp,
+                              gpointer* args,
+                              gpointer userdata);
 
-/* invocation info */
-static void prepare_c_invocation_info (GPerlI11nInvocationInfo *iinfo,
-                                       GICallableInfo *info,
-                                       IV items,
-                                       UV internal_stack_offset);
-static void clear_c_invocation_info (GPerlI11nInvocationInfo *iinfo);
-
-static void prepare_perl_invocation_info (GPerlI11nInvocationInfo *iinfo,
-                                          GICallableInfo *info);
-static void clear_perl_invocation_info (GPerlI11nInvocationInfo *iinfo);
+static void invoke_c_code (GICallableInfo *info,
+                           gpointer func_pointer,
+                           SV **sp, I32 ax, SV **mark, I32 items, /* these correspond to dXSARGS */
+                           UV internal_stack_offset,
+                           const gchar *package,
+                           const gchar *namespace,
+                           const gchar *function);
+static void free_after_call (GPerlI11nInvocationInfo *iinfo,
+                             GFunc func, gpointer data);
 
 /* info finders */
 static GIFunctionInfo * get_function_info (GIRepository *repository,
@@ -157,9 +170,11 @@ static GIFunctionInfo * get_function_info (GIRepository *repository,
                                            const gchar *method);
 static GIFieldInfo * get_field_info (GIBaseInfo *info,
                                      const gchar *field_name);
+static GISignalInfo * get_signal_info (GIBaseInfo *container_info,
+                                       const gchar *signal_name);
 static GType get_gtype (GIRegisteredTypeInfo *info);
 static const gchar * get_package_for_basename (const gchar *basename);
-
+static gboolean is_forbidden_sub_name (const gchar *name);
 
 /* marshallers */
 static SV * interface_to_sv (GITypeInfo* info,
@@ -174,6 +189,7 @@ static void sv_to_interface (GIArgInfo * arg_info,
                              GIArgument * arg,
                              GPerlI11nInvocationInfo * invocation_info);
 
+static SV * instance_pointer_to_sv (GICallableInfo *info, gpointer pointer);
 static gpointer instance_sv_to_pointer (GICallableInfo *info, SV *sv);
 
 static void sv_to_arg (SV * sv,
@@ -201,11 +217,12 @@ static SV * array_to_sv (GITypeInfo *info, gpointer pointer, GITransfer transfer
 static gpointer sv_to_array (GITransfer transfer, GITypeInfo *type_info, SV *sv, GPerlI11nInvocationInfo *iinfo);
 
 static SV * glist_to_sv (GITypeInfo* info, gpointer pointer, GITransfer transfer);
-static gpointer sv_to_glist (GITransfer transfer, GITypeInfo * type_info, SV * sv);
+static gpointer sv_to_glist (GITransfer transfer, GITypeInfo * type_info, SV * sv, GPerlI11nInvocationInfo *iinfo);
 
 static SV * ghash_to_sv (GITypeInfo *info, gpointer pointer, GITransfer transfer);
 static gpointer sv_to_ghash (GITransfer transfer, GITypeInfo *type_info, SV *sv);
 
+#define CAST_RAW(raw, type) (*((type *) raw))
 static void raw_to_arg (gpointer raw, GIArgument *arg, GITypeInfo *info);
 static void arg_to_raw (GIArgument *arg, gpointer raw, GITypeInfo *info);
 
@@ -227,16 +244,19 @@ static GType find_union_member_gtype (const gchar *package, const gchar *namespa
 /* methods */
 static void store_methods (HV *namespaced_functions, GIBaseInfo *info, GIInfoType info_type);
 
+/* object vfuncs */
+static void store_objects_with_vfuncs (AV *objects_with_vfuncs, GIObjectInfo *info);
+static void generic_class_init (GIObjectInfo *info, const gchar *target_package, gpointer class);
+
 /* interface vfuncs */
 static void generic_interface_init (gpointer iface, gpointer data);
 static void generic_interface_finalize (gpointer iface, gpointer data);
 
-/* object vfuncs */
-static void generic_class_init (GIObjectInfo *info, const gchar *target_package, gpointer class);
-
 /* misc. */
-#define ccroak(...) call_carp_croak (form (__VA_ARGS__));
 static void call_carp_croak (const char *msg);
+static void call_carp_carp (const char *msg);
+#define ccroak(...) call_carp_croak (form (__VA_ARGS__));
+#define cwarn(...) call_carp_carp (form (__VA_ARGS__));
 
 /* interface_to_sv and its callers might invoke Perl code, so any xsub invoking
  * them needs to save the stack.  this wrapper does this automatically. */
@@ -257,7 +277,6 @@ static void call_carp_croak (const char *msg);
 #include "gperl-i11n-gvalue.c"
 #include "gperl-i11n-info.c"
 #include "gperl-i11n-invoke-c.c"
-#include "gperl-i11n-invoke-info.c"
 #include "gperl-i11n-invoke-perl.c"
 #include "gperl-i11n-marshal-arg.c"
 #include "gperl-i11n-marshal-array.c"
@@ -276,6 +295,13 @@ static void call_carp_croak (const char *msg);
 /* ------------------------------------------------------------------------- */
 
 MODULE = Glib::Object::Introspection	PACKAGE = Glib::Object::Introspection
+
+gboolean
+CHECK_VERSION (class, gint major, gint minor, gint micro)
+    CODE:
+	RETVAL = GI_CHECK_VERSION (major, minor, micro);
+    OUTPUT:
+	RETVAL
 
 void
 _load_library (class, namespace, version, search_path=NULL)
@@ -306,7 +332,7 @@ _register_types (class, namespace, package)
 	HV *namespaced_functions;
 	HV *fields;
 	AV *interfaces;
-	HV *objects_with_vfuncs;
+	AV *objects_with_vfuncs;
     PPCODE:
 	repository = g_irepository_get_default ();
 
@@ -315,7 +341,7 @@ _register_types (class, namespace, package)
 	namespaced_functions = newHV ();
 	fields = newHV ();
 	interfaces = newAV ();
-	objects_with_vfuncs = newHV ();
+	objects_with_vfuncs = newAV ();
 
 	number = g_irepository_get_n_infos (repository, namespace);
 	for (i = 0; i < number; i++) {
@@ -347,7 +373,9 @@ _register_types (class, namespace, package)
 		    info_type == GI_INFO_TYPE_INTERFACE ||
 		    info_type == GI_INFO_TYPE_BOXED ||
 		    info_type == GI_INFO_TYPE_STRUCT ||
-		    info_type == GI_INFO_TYPE_UNION)
+		    info_type == GI_INFO_TYPE_UNION ||
+		    info_type == GI_INFO_TYPE_ENUM ||
+		    info_type == GI_INFO_TYPE_FLAGS)
 		{
 			store_methods (namespaced_functions, info, info_type);
 		}
@@ -360,7 +388,7 @@ _register_types (class, namespace, package)
 		}
 
 		if (info_type == GI_INFO_TYPE_OBJECT) {
-			store_vfuncs (objects_with_vfuncs, info);
+			store_objects_with_vfuncs (objects_with_vfuncs, info);
 		}
 
 		/* These are the types that we want to register with perl-Glib. */
@@ -434,7 +462,7 @@ _register_types (class, namespace, package)
 	gperl_hv_take_sv (namespaced_functions, "", 0,
 	                  newRV_noinc ((SV *) global_functions));
 
-	EXTEND (SP, 4);
+	EXTEND (SP, 5);
 	PUSHs (sv_2mortal (newRV_noinc ((SV *) namespaced_functions)));
 	PUSHs (sv_2mortal (newRV_noinc ((SV *) constants)));
 	PUSHs (sv_2mortal (newRV_noinc ((SV *) fields)));
@@ -456,8 +484,8 @@ _register_boxed_synonym (class, const gchar *reg_basename, const gchar *reg_name
 	reg_info = g_irepository_find_by_name (repository, reg_basename, reg_name);
 	reg_type = reg_info ? get_gtype (reg_info) : 0;
 	if (!reg_type)
-		croak ("Could not lookup GType for type %s.%s",
-		       reg_basename, reg_name);
+		ccroak ("Could not lookup GType for type %s.%s",
+		        reg_basename, reg_name);
 
 	/* The GType in question (e.g., GdkRectangle) hasn't been loaded yet,
 	 * so we cannot use g_type_name.  It's also absent from the typelib, so
@@ -469,8 +497,8 @@ _register_boxed_synonym (class, const gchar *reg_basename, const gchar *reg_name
 	syn_type = syn_gtype_function_pointer ? syn_gtype_function_pointer () : 0;
 	g_module_close (module);
 	if (!syn_type)
-		croak ("Could not lookup GType from function %s",
-		       syn_gtype_function);
+		ccroak ("Could not lookup GType from function %s",
+		        syn_gtype_function);
 
 	dwarn ("registering synonym %s => %s",
 	       g_type_name (reg_type),
@@ -502,6 +530,48 @@ _fetch_constant (class, basename, constant)
 #endif
 	g_base_info_unref ((GIBaseInfo *) type_info);
 	g_base_info_unref ((GIBaseInfo *) info);
+    OUTPUT:
+	RETVAL
+
+SV *
+_construct_boxed (class, package)
+	const gchar *package
+    PREINIT:
+	GIRepository *repository;
+	GType gtype;
+	GIBaseInfo *info;
+	gsize size;
+	gpointer tmp_mem;
+    CODE:
+	gtype = gperl_boxed_type_from_package (package);
+	if (!gtype)
+		ccroak ("Could not find GType for package %s", package);
+	repository = g_irepository_get_default ();
+	info = g_irepository_find_by_gtype (repository, gtype);
+	if (!info) {
+		g_base_info_unref (info);
+		ccroak ("Could not fetch information for package %s; "
+		        "perhaps it has not been loaded via "
+		        "Glib::Object::Introspection?",
+		        package);
+	}
+	size = g_struct_info_get_size (info);
+	if (!size) {
+		g_base_info_unref (info);
+		ccroak ("Cannot create boxed struct of unknown size for package %s",
+		        package);
+	}
+	/* We allocate memory for the boxed type here with malloc(), but then
+	 * take a copy of it and discard the original so that the memory we
+	 * hand out is always allocated with the allocator used for the boxed
+	 * type.  Maybe we should use g_alloca? */
+	tmp_mem = g_malloc0 (size);
+	/* No PUTBACK/SPAGAIN needed here since the code that xsubpp generates
+	 * for OUTPUT does not refer to our local copy of the stack pointer
+	 * (but uses the ST macro). */
+	RETVAL = gperl_new_boxed_copy (tmp_mem, gtype);
+	g_free (tmp_mem);
+	g_base_info_unref (info);
     OUTPUT:
 	RETVAL
 
@@ -703,21 +773,15 @@ _find_vfuncs_with_implementation (class, object_package, target_package)
 		const gchar *vfunc_name;
 		GIFieldInfo *field_info;
 		gint field_offset;
-		gchar *perl_method_name;
 		vfunc_info = g_object_info_get_vfunc (object_info, i);
 		vfunc_name = g_base_info_get_name (vfunc_info);
 		/* FIXME: g_vfunc_info_get_offset does not seem to work here. */
 		field_info = get_field_info (struct_info, vfunc_name);
 		g_assert (field_info);
 		field_offset = g_field_info_get_offset (field_info);
-		perl_method_name = g_ascii_strup (vfunc_name, -1);
 		if (G_STRUCT_MEMBER (gpointer, target_klass, field_offset)) {
-			AV *av = newAV ();
-			av_push (av, newSVpv (vfunc_name, PL_na));
-			av_push (av, newSVpv (perl_method_name, PL_na));
-			XPUSHs (sv_2mortal (newRV_noinc ((SV *) av)));
+			XPUSHs (sv_2mortal (newSVpv (vfunc_name, PL_na)));
 		}
-		g_free (perl_method_name);
 		g_base_info_unref (field_info);
 		g_base_info_unref (vfunc_info);
 	}
@@ -741,7 +805,7 @@ _invoke_fallback_vfunc (class, vfunc_package, vfunc_name, target_package, ...)
 	gint field_offset;
 	gpointer func_pointer;
     PPCODE:
-	dwarn ("_invoke_parent_vfunc: %s.%s, target = %s\n",
+	dwarn ("_invoke_fallback_vfunc: %s.%s, target = %s\n",
 	       vfunc_package, vfunc_name, target_package);
 	gtype = gperl_object_type_from_package (target_package);
 	klass = g_type_class_peek (gtype);
@@ -760,10 +824,11 @@ _invoke_fallback_vfunc (class, vfunc_package, vfunc_name, target_package, ...)
 	field_offset = g_field_info_get_offset (field_info);
 	func_pointer = G_STRUCT_MEMBER (gpointer, klass, field_offset);
 	g_assert (func_pointer);
-	invoke_callable (vfunc_info, func_pointer,
-	                 sp, ax, mark, items,
-	                 internal_stack_offset);
-	/* SPAGAIN since invoke_callable probably modified the stack
+	invoke_c_code (vfunc_info, func_pointer,
+	               sp, ax, mark, items,
+	               internal_stack_offset,
+	               NULL, NULL, NULL);
+	/* SPAGAIN since invoke_c_code probably modified the stack
 	 * pointer.  so we need to make sure that our local variable
 	 * 'sp' is correct before the implicit PUTBACK happens. */
 	SPAGAIN;
@@ -772,10 +837,89 @@ _invoke_fallback_vfunc (class, vfunc_package, vfunc_name, target_package, ...)
 	g_base_info_unref (info);
 
 void
-invoke (class, basename, namespace, method, ...)
+_use_generic_signal_marshaller_for (class, const gchar *package, const gchar *signal, SV *args_converter=NULL)
+    CODE:
+#if GI_CHECK_VERSION (1, 33, 10)
+{
+	GType gtype;
+	GIRepository *repository;
+	GIBaseInfo *container_info;
+	GPerlI11nPerlSignalInfo *signal_info;
+	ffi_cif *cif;
+	ffi_closure *closure;
+	GIBaseInfo *closure_marshal_info;
+
+	gtype = gperl_type_from_package (package);
+	if (!gtype)
+		ccroak ("Could not find GType for package %s", package);
+
+	repository = g_irepository_get_default ();
+	container_info = g_irepository_find_by_gtype (repository, gtype);
+	if (!container_info ||
+	    !(GI_IS_OBJECT_INFO (container_info) ||
+	      GI_IS_INTERFACE_INFO (container_info)))
+		ccroak ("Could not find object/interface info for package %s",
+		        package);
+
+	signal_info = g_new0 (GPerlI11nPerlSignalInfo, 1); // FIXME: ctor?
+	signal_info->interface = get_signal_info (container_info, signal);
+	if (args_converter)
+		signal_info->args_converter = SvREFCNT_inc (args_converter);
+	if (!signal_info)
+		ccroak ("Could not find signal %s for package %s",
+		        signal, package);
+
+	closure_marshal_info = g_irepository_find_by_name (repository,
+		                                           "GObject",
+	                                                   "ClosureMarshal");
+	g_assert (closure_marshal_info);
+	cif = g_new0 (ffi_cif, 1);
+	closure = g_callable_info_prepare_closure (closure_marshal_info,
+	                                           cif,
+	                                           invoke_perl_signal_handler,
+	                                           signal_info);
+	g_base_info_unref (closure_marshal_info);
+
+	dwarn ("_use_generic_signal_marshaller_for: "
+	       "package %s, signal %s => closure %p\n",
+	       package, signal, closure);
+	gperl_signal_set_marshaller_for (gtype, (gchar*) signal, (GClosureMarshal) closure);
+
+	/* These should be freed when the signal marshaller is not needed
+	 * anymore.  But gperl_signal_set_marshaller_for does not provide a
+	 * hook for resource freeing.
+	 *
+	 * g_callable_info_free_closure (signal_info, closure);
+	 * g_free (cif);
+	 * g_base_info_unref (signal_info->interface);
+	 * if (signal_info->args_converter)
+	 * 	SvREFCNT_dec (signal_info->args_converter);
+	 * g_free (signal_info);
+	 */
+
+	g_base_info_unref (container_info);
+}
+#else
+{
+	PERL_UNUSED_VAR (args_converter);
+	/* g_callable_info_prepare_closure, and thus
+	 * create_perl_callback_closure and invoke_perl_signal_handler, did not
+	 * work correctly for signals prior to commit
+	 * d8970fbc500a8b20853b564536251315587450d9 in
+	 * gobject-introspection. */
+	warn ("*** Cannot use generic signal marshallers for signal %s of %s "
+	      "unless gobject-introspection >= 1.33.10; "
+	      "any handlers connected to the signal "
+	      "might thus be invoked incorrectly\n",
+	      signal, package);
+}
+#endif
+
+void
+invoke (class, basename, namespace, function, ...)
 	const gchar *basename
 	const gchar_ornull *namespace
-	const gchar *method
+	const gchar *function
     PREINIT:
 	UV internal_stack_offset = 4;
 	GIRepository *repository;
@@ -784,21 +928,43 @@ invoke (class, basename, namespace, method, ...)
 	const gchar *symbol = NULL;
     PPCODE:
 	repository = g_irepository_get_default ();
-	info = get_function_info (repository, basename, namespace, method);
+	info = get_function_info (repository, basename, namespace, function);
 	symbol = g_function_info_get_symbol (info);
 	if (!g_typelib_symbol (g_base_info_get_typelib((GIBaseInfo *) info),
 			       symbol, &func_pointer))
 	{
+		g_base_info_unref ((GIBaseInfo *) info);
 		ccroak ("Could not locate symbol %s", symbol);
 	}
-	invoke_callable (info, func_pointer,
-	                 sp, ax, mark, items,
-	                 internal_stack_offset);
-	/* SPAGAIN since invoke_callable probably modified the stack pointer.
+	invoke_c_code (info, func_pointer,
+	               sp, ax, mark, items,
+	               internal_stack_offset,
+	               get_package_for_basename (basename), namespace, function);
+	/* SPAGAIN since invoke_c_code probably modified the stack pointer.
 	 * so we need to make sure that our implicit local variable 'sp' is
 	 * correct before the implicit PUTBACK happens. */
 	SPAGAIN;
 	g_base_info_unref ((GIBaseInfo *) info);
+
+gint
+convert_sv_to_enum (class, const gchar *package, SV *sv)
+    PREINIT:
+	GType gtype;
+    CODE:
+	gtype = gperl_type_from_package (package);
+	RETVAL = gperl_convert_enum (gtype, sv);
+    OUTPUT:
+	RETVAL
+
+SV *
+convert_enum_to_sv (class, const gchar *package, gint n)
+    PREINIT:
+	GType gtype;
+    CODE:
+	gtype = gperl_type_from_package (package);
+	RETVAL = gperl_convert_back_enum (gtype, n);
+    OUTPUT:
+	RETVAL
 
 # --------------------------------------------------------------------------- #
 
@@ -838,13 +1004,18 @@ _invoke (SV *code, ...)
     PREINIT:
 	GPerlI11nCCallbackInfo *wrapper;
 	UV internal_stack_offset = 1;
-    CODE:
+    PPCODE:
 	wrapper = INT2PTR (GPerlI11nCCallbackInfo*, SvIV (SvRV (code)));
 	if (!wrapper || !wrapper->func)
 		ccroak ("invalid reference encountered");
-	invoke_callable (wrapper->interface, wrapper->func,
-	                 sp, ax, mark, items,
-	                 internal_stack_offset);
+	invoke_c_code (wrapper->interface, wrapper->func,
+	               sp, ax, mark, items,
+	               internal_stack_offset,
+	               NULL, NULL, NULL);
+	/* SPAGAIN since invoke_c_code probably modified the stack
+	 * pointer.  so we need to make sure that our local variable
+	 * 'sp' is correct before the implicit PUTBACK happens. */
+	SPAGAIN;
 
 void
 DESTROY (SV *code)

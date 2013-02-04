@@ -48,6 +48,54 @@ instance_sv_to_pointer (GICallableInfo *info, SV *sv)
 	return pointer;
 }
 
+/* This may call Perl code (via gperl_new_boxed, gperl_sv_from_value,
+ * struct_to_sv), so it needs to be wrapped with PUTBACK/SPAGAIN by the
+ * caller. */
+static SV *
+instance_pointer_to_sv (GICallableInfo *info, gpointer pointer)
+{
+	// We do *not* own container.
+	GIBaseInfo *container = g_base_info_get_container (info);
+	GIInfoType info_type = g_base_info_get_type (container);
+	SV *sv = NULL;
+
+	/* FIXME: Much of this code is duplicated in interface_to_sv. */
+
+	dwarn ("  instance_pointer_to_sv: container name: %s, info type: %d\n",
+	       g_base_info_get_name (container),
+	       info_type);
+
+	switch (info_type) {
+	    case GI_INFO_TYPE_OBJECT:
+	    case GI_INFO_TYPE_INTERFACE:
+		sv = gperl_new_object (pointer, FALSE);
+		dwarn ("    -> object SV: %p\n", sv);
+		break;
+
+	    case GI_INFO_TYPE_BOXED:
+	    case GI_INFO_TYPE_STRUCT:
+	    case GI_INFO_TYPE_UNION:
+	    {
+		GType type = get_gtype ((GIRegisteredTypeInfo *) container);
+		if (!type || type == G_TYPE_NONE) {
+			dwarn ("    unboxed type\n");
+			sv = struct_to_sv (container, info_type, pointer, FALSE);
+		} else {
+			dwarn ("    boxed type: %s (%d)\n",
+			       g_type_name (type), type);
+			sv = gperl_new_boxed (pointer, type, FALSE);
+		}
+		warn ("    -> boxed pointer: %p\n", pointer);
+		break;
+	    }
+
+	    default:
+		ccroak ("instance_pointer_to_sv: Don't know how to handle info type %d", info_type);
+	}
+
+	return sv;
+}
+
 static void
 sv_to_interface (GIArgInfo * arg_info,
                  GITypeInfo * type_info,
@@ -105,9 +153,12 @@ sv_to_interface (GIArgInfo * arg_info,
 			package = get_package_for_basename (namespace);
 			parent_type = find_union_member_gtype (package, name);
 			if (parent_type && parent_type != G_TYPE_NONE) {
-				/* FIXME: Check transfer setting. */
 				arg->v_pointer = gperl_get_boxed_check (
 				                   sv, parent_type);
+				if (GI_TRANSFER_EVERYTHING == transfer)
+					arg->v_pointer =
+						g_boxed_copy (parent_type,
+						              arg->v_pointer);
 			} else {
 				arg->v_pointer = sv_to_struct (transfer,
 				                               interface,
@@ -120,11 +171,22 @@ sv_to_interface (GIArgInfo * arg_info,
 			g_assert (!need_value_semantics);
 			arg->v_pointer = gperl_closure_new (sv, NULL, FALSE);
 		} else if (type == G_TYPE_VALUE) {
+			GValue *gvalue = SvGValueWrapper (sv);
 			dwarn ("    value type\n");
-			g_assert (!need_value_semantics);
-			arg->v_pointer = SvGValueWrapper (sv);
-			if (!arg->v_pointer)
+			if (!gvalue)
 				ccroak ("Cannot convert arbitrary SV to GValue");
+			if (need_value_semantics) {
+				g_value_init (arg->v_pointer, G_VALUE_TYPE (gvalue));
+				g_value_copy (gvalue, arg->v_pointer);
+			} else {
+				if (GI_TRANSFER_EVERYTHING == transfer) {
+					arg->v_pointer = g_new0 (GValue, 1);
+					g_value_init (arg->v_pointer, G_VALUE_TYPE (gvalue));
+					g_value_copy (gvalue, arg->v_pointer);
+				} else {
+					arg->v_pointer = gvalue;
+				}
+			}
 		} else {
 			dwarn ("    boxed type: %s, name=%s, caller-allocates=%d, is-pointer=%d\n",
 			       g_type_name (type),
@@ -132,15 +194,21 @@ sv_to_interface (GIArgInfo * arg_info,
 			       g_arg_info_is_caller_allocates (arg_info),
 			       g_type_info_is_pointer (type_info));
 			if (need_value_semantics) {
-				gsize n_bytes = g_struct_info_get_size (interface);
-				gpointer mem = gperl_get_boxed_check (sv, type);
-				g_memmove (arg->v_pointer, mem, n_bytes);
+				if (may_be_null && !gperl_sv_is_defined (sv)) {
+					/* Do nothing. */
+				} else {
+					gsize n_bytes = g_struct_info_get_size (interface);
+					gpointer mem = gperl_get_boxed_check (sv, type);
+					g_memmove (arg->v_pointer, mem, n_bytes);
+				}
 			} else {
 				if (may_be_null && !gperl_sv_is_defined (sv)) {
 					arg->v_pointer = NULL;
 				} else {
-					/* FIXME: Check transfer setting. */
 					arg->v_pointer = gperl_get_boxed_check (sv, type);
+					if (GI_TRANSFER_EVERYTHING == transfer)
+						arg->v_pointer = g_boxed_copy (
+							type, arg->v_pointer);
 				}
 			}
 		}

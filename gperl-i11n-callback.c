@@ -1,7 +1,7 @@
 /* -*- mode: c; indent-tabs-mode: t; c-basic-offset: 8; -*- */
 
 static GPerlI11nPerlCallbackInfo *
-create_perl_callback_closure (GITypeInfo *cb_type, SV *code)
+create_perl_callback_closure (GICallableInfo *cb_info, SV *code)
 {
 	GPerlI11nPerlCallbackInfo *info;
 
@@ -9,16 +9,20 @@ create_perl_callback_closure (GITypeInfo *cb_type, SV *code)
 	if (!gperl_sv_is_defined (code))
 		return info;
 
-	info->interface =
-		(GICallableInfo *) g_type_info_get_interface (cb_type);
+	info->interface = g_base_info_ref (cb_info);
 	info->cif = g_new0 (ffi_cif, 1);
 	info->closure =
 		g_callable_info_prepare_closure (info->interface, info->cif,
-		                                 invoke_callback, info);
+		                                 invoke_perl_code, info);
 	/* FIXME: This should most likely use SvREFCNT_inc instead of
 	 * newSVsv. */
 	info->code = newSVsv (code);
 	info->sub_name = NULL;
+
+	/* These are only relevant for signal marshalling; if needed, they get
+	 * set in invoke_perl_signal_handler. */
+	info->swap_data = FALSE;
+	info->args_converter = NULL;
 
 #ifdef PERL_IMPLICIT_CONTEXT
 	info->priv = aTHX;
@@ -36,17 +40,16 @@ attach_perl_callback_data (GPerlI11nPerlCallbackInfo *info, SV *data)
 
 /* assumes ownership of sub_name */
 static GPerlI11nPerlCallbackInfo *
-create_perl_callback_closure_for_named_sub (GITypeInfo *cb_type, gchar *sub_name)
+create_perl_callback_closure_for_named_sub (GICallableInfo *cb_info, gchar *sub_name)
 {
 	GPerlI11nPerlCallbackInfo *info;
 
 	info = g_new0 (GPerlI11nPerlCallbackInfo, 1);
-	info->interface =
-		(GICallableInfo *) g_type_info_get_interface (cb_type);
+	info->interface = g_base_info_ref (cb_info);
 	info->cif = g_new0 (ffi_cif, 1);
 	info->closure =
 		g_callable_info_prepare_closure (info->interface, info->cif,
-		                                 invoke_callback, info);
+		                                 invoke_perl_code, info);
 	info->sub_name = sub_name;
 	info->code = NULL;
 	info->data = NULL;
@@ -81,6 +84,9 @@ release_perl_callback (gpointer data)
 		SvREFCNT_dec (info->data);
 	if (info->sub_name)
 		g_free (info->sub_name);
+
+	if (info->args_converter)
+		SvREFCNT_dec (info->args_converter);
 
 	g_free (info);
 }

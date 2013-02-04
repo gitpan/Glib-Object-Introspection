@@ -1,5 +1,12 @@
 /* -*- mode: c; indent-tabs-mode: t; c-basic-offset: 8; -*- */
 
+static void
+free_raw_array (gpointer raw_array)
+{
+	dwarn ("free_raw_array %p\n", raw_array);
+	g_free (raw_array);
+}
+
 /* This may call Perl code (via arg_to_sv), so it needs to be wrapped with
  * PUTBACK/SPAGAIN by the caller. */
 static SV *
@@ -33,13 +40,13 @@ array_to_sv (GITypeInfo *info,
 	if (is_zero_terminated) {
 		length = g_strv_length (pointer);
 	} else {
-                length = g_type_info_get_array_fixed_size (info);
-                if (length < 0) {
+		length = g_type_info_get_array_fixed_size (info);
+		if (length < 0) {
 			guint length_pos = g_type_info_get_array_length (info);
 			g_assert (iinfo && iinfo->aux_args);
 			/* FIXME: Is it OK to always use v_size here? */
 			length = iinfo->aux_args[length_pos].v_size;
-                }
+		}
 	}
 
 	if (length < 0) {
@@ -87,6 +94,7 @@ sv_to_array (GITransfer transfer,
 	gint i, length, length_pos;
 	GPerlI11nArrayInfo *array_info = NULL;
         GArray *array;
+        gpointer raw_array;
         gboolean is_zero_terminated = FALSE;
         gsize item_size;
 	gboolean need_struct_value_semantics;
@@ -95,7 +103,7 @@ sv_to_array (GITransfer transfer,
 
 	/* Add an array info entry even before the undef check so that the
 	 * corresponding length arg is set to zero later by
-	 * handle_automatic_arg. */
+	 * _handle_automatic_arg. */
 	length_pos = g_type_info_get_array_length (type_info);
 	if (length_pos >= 0) {
 		array_info = g_new0 (GPerlI11nArrayInfo, 1);
@@ -112,9 +120,9 @@ sv_to_array (GITransfer transfer,
 
 	av = (AV *) SvRV (sv);
 
-        item_transfer = transfer == GI_TRANSFER_CONTAINER
-                      ? GI_TRANSFER_NOTHING
-                      : transfer;
+	item_transfer = transfer == GI_TRANSFER_CONTAINER
+		      ? GI_TRANSFER_NOTHING
+		      : transfer;
 
 	param_info = g_type_info_get_param_type (type_info, 0);
 	param_tag = g_type_info_get_tag (param_info);
@@ -123,10 +131,10 @@ sv_to_array (GITransfer transfer,
 	       g_type_tag_to_string (g_type_info_get_tag (param_info)),
 	       transfer);
 
-        is_zero_terminated = g_type_info_is_zero_terminated (type_info);
-        item_size = size_of_type_info (param_info);
+	is_zero_terminated = g_type_info_is_zero_terminated (type_info);
+	item_size = size_of_type_info (param_info);
 	length = av_len (av) + 1;
-        array = g_array_sized_new (is_zero_terminated, FALSE, item_size, length);
+	array = g_array_sized_new (is_zero_terminated, FALSE, item_size, length);
 
 	/* Arrays containing non-basic types as non-pointers need to be treated
 	 * specially.  Prime example: GValue *values = g_new0 (GValue, n);
@@ -147,7 +155,7 @@ sv_to_array (GITransfer transfer,
 			sv_to_arg (*svp, &arg, NULL, param_info,
 			           item_transfer, TRUE, NULL);
 
-                        if (need_struct_value_semantics) {
+			if (need_struct_value_semantics) {
 				/* Copy from the memory area pointed to by
 				 * arg.v_pointer. */
 				g_array_insert_vals (array, i, arg.v_pointer, 1);
@@ -165,8 +173,11 @@ sv_to_array (GITransfer transfer,
 		array_info->length = length;
 	}
 
+	raw_array = g_array_free (array, FALSE);
+	if (GI_TRANSFER_NOTHING == transfer)
+		free_after_call (iinfo, (GFunc) free_raw_array, raw_array);
+
 	g_base_info_unref ((GIBaseInfo *) param_info);
 
-	/* FIXME: for transfer=nothing, we seem to be leaking the bare array. */
-	return g_array_free (array, FALSE);
+	return raw_array;
 }

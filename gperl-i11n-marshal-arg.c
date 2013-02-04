@@ -17,7 +17,8 @@ sv_to_arg (SV * sv,
 		/* Interfaces and void types need to be able to handle undef
 		 * separately. */
 		if (!may_be_null && tag != GI_TYPE_TAG_INTERFACE
-		                 && tag != GI_TYPE_TAG_VOID) {
+		                 && tag != GI_TYPE_TAG_VOID)
+		{
 			if (arg_info) {
 				ccroak ("undefined value for mandatory argument '%s' encountered",
 				        g_base_info_get_name ((GIBaseInfo *) arg_info));
@@ -30,6 +31,13 @@ sv_to_arg (SV * sv,
 	    case GI_TYPE_TAG_VOID:
 		/* returns NULL if no match is found */
 		arg->v_pointer = sv_to_callback_data (sv, invocation_info);
+		if (!arg->v_pointer && g_type_info_is_pointer (type_info)
+		    && gperl_sv_is_ref (sv))
+		{
+			arg->v_pointer = SvRV (sv);
+		}
+		dwarn ("    argument with no type information -> pointer %p\n",
+		       arg->v_pointer);
 		break;
 
 	    case GI_TYPE_TAG_BOOLEAN:
@@ -88,7 +96,7 @@ sv_to_arg (SV * sv,
 		break;
 
 	    case GI_TYPE_TAG_ARRAY:
-                arg->v_pointer = sv_to_array (transfer, type_info, sv, invocation_info);
+		arg->v_pointer = sv_to_array (transfer, type_info, sv, invocation_info);
 		break;
 
 	    case GI_TYPE_TAG_INTERFACE:
@@ -99,11 +107,11 @@ sv_to_arg (SV * sv,
 
 	    case GI_TYPE_TAG_GLIST:
 	    case GI_TYPE_TAG_GSLIST:
-		arg->v_pointer = sv_to_glist (transfer, type_info, sv);
+		arg->v_pointer = sv_to_glist (transfer, type_info, sv, invocation_info);
 		break;
 
 	    case GI_TYPE_TAG_GHASH:
-                arg->v_pointer = sv_to_ghash (transfer, type_info, sv);
+		arg->v_pointer = sv_to_ghash (transfer, type_info, sv);
 		break;
 
 	    case GI_TYPE_TAG_ERROR:
@@ -146,10 +154,17 @@ arg_to_sv (GIArgument * arg,
 	switch (tag) {
 	    case GI_TYPE_TAG_VOID:
 	    {
+		/* returns NULL if no match is found */
 		SV *sv = callback_data_to_sv (arg->v_pointer, iinfo);
-		dwarn ("    argument with no type information -> %s\n",
-		       sv ? "callback data" : "undef");
-		return sv ? SvREFCNT_inc (sv) : &PL_sv_undef;
+		if (sv) {
+			SvREFCNT_inc (sv);
+		} else {
+			if (arg->v_pointer && g_type_info_is_pointer (info)) {
+				sv = newRV (arg->v_pointer);
+			}
+		}
+		dwarn ("    argument with no type information -> SV %p\n", sv);
+		return sv ? sv : &PL_sv_undef;
 	    }
 
 	    case GI_TYPE_TAG_BOOLEAN:
@@ -195,17 +210,16 @@ arg_to_sv (GIArgument * arg,
 		return sv;
 	    }
 
-	    case GI_TYPE_TAG_GTYPE: {
-		/* GType == gsize */
+	    case GI_TYPE_TAG_GTYPE:
+	    {
+		GType gtype = arg->v_size;
 		const char *package;
-		if (G_TYPE_INVALID == arg->v_size || G_TYPE_NONE == arg->v_size)
+		if (G_TYPE_INVALID == gtype || G_TYPE_NONE == gtype)
 			return &PL_sv_undef;
-		package = gperl_package_from_type (arg->v_size);
+		package = gperl_package_from_type (gtype);
 		if (!package)
-			package = g_type_name (arg->v_size);
-		if (!package)
-			return &PL_sv_undef;
-		return newSVpv (package, PL_na);
+			package = g_type_name (gtype);
+		return package ? newSVpv (package, PL_na) : &PL_sv_undef;
 	    }
 
 	    case GI_TYPE_TAG_ARRAY:
@@ -219,7 +233,7 @@ arg_to_sv (GIArgument * arg,
 		return glist_to_sv (info, arg->v_pointer, transfer);
 
 	    case GI_TYPE_TAG_GHASH:
-                return ghash_to_sv (info, arg->v_pointer, transfer);
+		return ghash_to_sv (info, arg->v_pointer, transfer);
 
 	    case GI_TYPE_TAG_ERROR:
 		ccroak ("FIXME - GI_TYPE_TAG_ERROR");

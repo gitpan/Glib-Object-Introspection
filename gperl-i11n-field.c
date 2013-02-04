@@ -29,16 +29,16 @@ store_fields (HV *fields, GIBaseInfo *info, GIInfoType info_type)
 
 	    case GI_INFO_TYPE_UNION:
 	    {
-                gint n_fields = g_union_info_get_n_fields ((GIUnionInfo *) info);
-                for (i = 0; i < n_fields; i++) {
-                        GIFieldInfo *field_info;
-                        const gchar *field_name;
-                        field_info = g_union_info_get_field ((GIUnionInfo *) info, i);
-                        field_name = g_base_info_get_name ((GIBaseInfo *) field_info);
-                        av_push (av, newSVpv (field_name, PL_na));
-                        g_base_info_unref ((GIBaseInfo *) field_info);
-                }
-                break;
+		gint n_fields = g_union_info_get_n_fields ((GIUnionInfo *) info);
+		for (i = 0; i < n_fields; i++) {
+			GIFieldInfo *field_info;
+			const gchar *field_name;
+			field_info = g_union_info_get_field ((GIUnionInfo *) info, i);
+			field_name = g_base_info_get_name ((GIBaseInfo *) field_info);
+			av_push (av, newSVpv (field_name, PL_na));
+			g_base_info_unref ((GIBaseInfo *) field_info);
+		}
+		break;
 	    }
 
 	    default:
@@ -154,6 +154,18 @@ set_field (GIFieldInfo *field_info, gpointer mem, GITransfer transfer, SV *sv)
 					              sv);
 			}
 		}
+	}
+
+	/* Neither are void pointers.  We put an RV to the SV into them, which
+	 * goes hand in hand with what get_field() is doing above via
+	 * arg_to_sv(). */
+	else if (tag == GI_TYPE_TAG_VOID &&
+	         g_type_info_is_pointer (field_type))
+	{
+		gsize offset = g_field_info_get_offset (field_info);
+		sv_to_arg (sv, &arg, NULL, field_type,
+		           transfer, TRUE, NULL);
+		G_STRUCT_MEMBER (gpointer, mem, offset) = arg.v_pointer;
 	}
 
 	else {
