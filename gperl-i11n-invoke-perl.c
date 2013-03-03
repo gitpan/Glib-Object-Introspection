@@ -1,7 +1,8 @@
 /* -*- mode: c; indent-tabs-mode: t; c-basic-offset: 8; -*- */
 
 static void _prepare_perl_invocation_info (GPerlI11nInvocationInfo *iinfo,
-                                           GICallableInfo *info);
+                                           GICallableInfo *info,
+                                           gpointer *args);
 static void _clear_perl_invocation_info (GPerlI11nInvocationInfo *iinfo);
 
 static void
@@ -23,7 +24,7 @@ invoke_perl_code (ffi_cif* cif, gpointer resp, gpointer* args, gpointer userdata
 	info = (GPerlI11nPerlCallbackInfo *) userdata;
 	cb_interface = (GICallableInfo *) info->interface;
 
-	_prepare_perl_invocation_info (&iinfo, cb_interface);
+	_prepare_perl_invocation_info (&iinfo, cb_interface, args);
 
 	/* set perl context */
 	GPERL_CALLBACK_MARSHAL_INIT (info);
@@ -337,8 +338,11 @@ invoke_perl_signal_handler (ffi_cif* cif, gpointer resp, gpointer* args, gpointe
 
 static void
 _prepare_perl_invocation_info (GPerlI11nInvocationInfo *iinfo,
-                               GICallableInfo *info)
+                               GICallableInfo *info,
+                               gpointer *args)
 {
+	guint i;
+
 	dwarn ("Perl invoke: %s\n"
 	       "  n_args: %d\n",
 	       g_base_info_get_name (info),
@@ -370,20 +374,30 @@ _prepare_perl_invocation_info (GPerlI11nInvocationInfo *iinfo,
 
 	iinfo->dynamic_stack_offset = 0;
 
-	/* If the callback is supposed to return a GInitiallyUnowned object
-	 * then we must enforce GI_TRANSFER_EVERYTHING.  Otherwise, if the Perl
-	 * code returns a newly created object, FREETMPS would finalize it. */
-	if (g_type_info_get_tag (iinfo->return_type_info) == GI_TYPE_TAG_INTERFACE &&
-	    iinfo->return_type_transfer == GI_TRANSFER_NOTHING)
-	{
-		GIBaseInfo *interface = g_type_info_get_interface (iinfo->return_type_info);
-		if (GI_IS_REGISTERED_TYPE_INFO (interface) &&
-		    g_type_is_a (get_gtype (interface),
-		                 G_TYPE_INITIALLY_UNOWNED))
-		{
-			iinfo->return_type_transfer = GI_TRANSFER_EVERYTHING;
+	/* Find array length arguments and store their value in aux_args so
+	 * that array_to_sv can later fetch them. */
+	if (iinfo->n_args) {
+		iinfo->aux_args = gperl_alloc_temp (sizeof (GIArgument) * iinfo->n_args);
+	}
+	for (i = 0 ; i < iinfo->n_args ; i++) {
+		GIArgInfo *arg_info = g_callable_info_get_arg (info, i);
+		GITypeInfo *arg_type = g_arg_info_get_type (arg_info);
+		GITypeTag arg_tag = g_type_info_get_tag (arg_type);
+
+		if (arg_tag == GI_TYPE_TAG_ARRAY) {
+			gint pos = g_type_info_get_array_length (arg_type);
+			if (pos >= 0) {
+				GIArgInfo *length_arg_info = g_callable_info_get_arg (info, i);
+				GITypeInfo *length_arg_type = g_arg_info_get_type (arg_info);
+				raw_to_arg (args[pos], &iinfo->aux_args[pos], length_arg_type);
+				dwarn ("  pos %d is array length => %d\n", pos, iinfo->aux_args[pos].v_size);
+				g_base_info_unref (length_arg_type);
+				g_base_info_unref (length_arg_info);
+			}
 		}
-		g_base_info_unref (interface);
+
+		g_base_info_unref (arg_type);
+		g_base_info_unref (arg_info);
 	}
 }
 

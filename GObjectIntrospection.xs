@@ -72,8 +72,8 @@ typedef struct {
 	gpointer data;
 	GDestroyNotify destroy;
 
-	guint data_pos;
-	guint destroy_pos;
+	gint data_pos;
+	gint destroy_pos;
 
 	SV *data_sv;
 } GPerlI11nCCallbackInfo;
@@ -448,6 +448,15 @@ _register_types (class, namespace, package)
 		    case GI_INFO_TYPE_ENUM:
 		    case GI_INFO_TYPE_FLAGS:
 			gperl_register_fundamental (type, full_package);
+#if GI_CHECK_VERSION (1, 29, 17)
+			{
+				const gchar *domain = g_enum_info_get_error_domain (info);
+				if (domain) {
+					gperl_register_error_domain (g_quark_from_string (domain),
+								     type, full_package);
+				}
+			}
+#endif
 			break;
 
 		    default:
@@ -603,7 +612,8 @@ _get_field (class, basename, namespace, field, invocant)
 		 * {$package}::_i11n_gtype SV.  It gets set for members of
 		 * boxed unions. */
 		const gchar *package = get_package_for_basename (basename);
-		invocant_type = find_union_member_gtype (package, namespace);
+		if (package)
+			invocant_type = find_union_member_gtype (package, namespace);
 	}
 	if (!g_type_is_a (invocant_type, G_TYPE_BOXED))
 		ccroak ("Unable to handle access to field '%s' for type '%s'",
@@ -645,7 +655,8 @@ _set_field (class, basename, namespace, field, invocant, new_value)
 		 * {$package}::_i11n_gtype SV.  It gets set for members of
 		 * boxed unions. */
 		const gchar *package = get_package_for_basename (basename);
-		invocant_type = find_union_member_gtype (package, namespace);
+		if (package)
+			invocant_type = find_union_member_gtype (package, namespace);
 	}
 	if (!g_type_is_a (invocant_type, G_TYPE_BOXED))
 		ccroak ("Unable to handle access to field '%s' for type '%s'",
@@ -724,6 +735,7 @@ _find_non_perl_parents (class, basename, object_name, target_package)
 	GIRepository *repository;
 	GIObjectInfo *info;
 	GType gtype, object_gtype;
+	/* FIXME: we should export gperl_type_reg_quark from Glib */
 	GQuark reg_quark = g_quark_from_static_string ("__gperl_type_reg");
     PPCODE:
 	repository = g_irepository_get_default ();
@@ -733,7 +745,6 @@ _find_non_perl_parents (class, basename, object_name, target_package)
 	object_gtype = get_gtype (info);
 	/* find all non-Perl parents up to and including the object type */
 	while ((gtype = g_type_parent (gtype))) {
-		/* FIXME: we should export gperl_type_reg_quark from Glib */
 		if (!g_type_get_qdata (gtype, reg_quark)) {
 			const gchar *package = gperl_object_package_from_type (gtype);
 			XPUSHs (sv_2mortal (newSVpv (package, PL_na)));
@@ -753,7 +764,6 @@ _find_vfuncs_with_implementation (class, object_package, target_package)
 	GType object_gtype, target_gtype;
 	gpointer object_klass, target_klass;
 	GIObjectInfo *object_info;
-	GIStructInfo *struct_info;
 	gint n_vfuncs, i;
     PPCODE:
 	repository = g_irepository_get_default ();
@@ -765,27 +775,20 @@ _find_vfuncs_with_implementation (class, object_package, target_package)
 	g_assert (target_klass && object_klass);
 	object_info = g_irepository_find_by_gtype (repository, object_gtype);
 	g_assert (object_info && GI_IS_OBJECT_INFO (object_info));
-	struct_info = g_object_info_get_class_struct (object_info);
-	g_assert (struct_info);
 	n_vfuncs = g_object_info_get_n_vfuncs (object_info);
 	for (i = 0; i < n_vfuncs; i++) {
 		GIVFuncInfo *vfunc_info;
 		const gchar *vfunc_name;
-		GIFieldInfo *field_info;
 		gint field_offset;
 		vfunc_info = g_object_info_get_vfunc (object_info, i);
 		vfunc_name = g_base_info_get_name (vfunc_info);
 		/* FIXME: g_vfunc_info_get_offset does not seem to work here. */
-		field_info = get_field_info (struct_info, vfunc_name);
-		g_assert (field_info);
-		field_offset = g_field_info_get_offset (field_info);
+		field_offset = get_vfunc_offset (object_info, vfunc_name);
 		if (G_STRUCT_MEMBER (gpointer, target_klass, field_offset)) {
 			XPUSHs (sv_2mortal (newSVpv (vfunc_name, PL_na)));
 		}
-		g_base_info_unref (field_info);
 		g_base_info_unref (vfunc_info);
 	}
-	g_base_info_unref (struct_info);
 	g_base_info_unref (object_info);
 
 void
@@ -799,9 +802,7 @@ _invoke_fallback_vfunc (class, vfunc_package, vfunc_name, target_package, ...)
 	GIObjectInfo *info;
 	GType gtype;
 	gpointer klass;
-	GIStructInfo *struct_info;
 	GIVFuncInfo *vfunc_info;
-	GIFieldInfo *field_info;
 	gint field_offset;
 	gpointer func_pointer;
     PPCODE:
@@ -814,14 +815,10 @@ _invoke_fallback_vfunc (class, vfunc_package, vfunc_name, target_package, ...)
 	info = g_irepository_find_by_gtype (
 		repository, gperl_object_type_from_package (vfunc_package));
 	g_assert (info && GI_IS_OBJECT_INFO (info));
-	struct_info = g_object_info_get_class_struct (info);
-	g_assert (struct_info);
 	vfunc_info = g_object_info_find_vfunc (info, vfunc_name);
 	g_assert (vfunc_info);
 	/* FIXME: g_vfunc_info_get_offset does not seem to work here. */
-	field_info = get_field_info (struct_info, vfunc_name);
-	g_assert (field_info);
-	field_offset = g_field_info_get_offset (field_info);
+	field_offset = get_vfunc_offset (info, vfunc_name);
 	func_pointer = G_STRUCT_MEMBER (gpointer, klass, field_offset);
 	g_assert (func_pointer);
 	invoke_c_code (vfunc_info, func_pointer,
@@ -832,7 +829,6 @@ _invoke_fallback_vfunc (class, vfunc_package, vfunc_name, target_package, ...)
 	 * pointer.  so we need to make sure that our local variable
 	 * 'sp' is correct before the implicit PUTBACK happens. */
 	SPAGAIN;
-	g_base_info_unref (field_info);
 	g_base_info_unref (vfunc_info);
 	g_base_info_unref (info);
 

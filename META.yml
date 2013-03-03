@@ -31,4 +31,4 @@ resources:
   license: http://www.gnu.org/licenses/lgpl-2.1.html
   repository: git://git.gnome.org/perl-Glib-Object-Introspection
   x_MailingList: https://mail.gnome.org/mailman/listinfo/gtk-perl-list
-version: 0.014
+version: 0.015
