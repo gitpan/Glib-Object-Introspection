@@ -4,7 +4,7 @@
       "Glib::Object::Introspection Team <gtk-perl-list at gnome dot org>"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "ExtUtils::MakeMaker version 6.64, CPAN::Meta::Converter version 2.112621",
+   "generated_by" : "ExtUtils::MakeMaker version 6.68, CPAN::Meta::Converter version 2.131560",
    "license" : [
       "lgpl_2_1"
    ],
@@ -27,6 +27,11 @@
       ]
    },
    "prereqs" : {
+      "build" : {
+         "requires" : {
+            "ExtUtils::MakeMaker" : "0"
+         }
+      },
       "configure" : {
          "requires" : {
             "ExtUtils::Depends" : "0.3",
@@ -36,6 +41,8 @@
       },
       "runtime" : {
          "requires" : {
+            "ExtUtils::Depends" : "0.3",
+            "ExtUtils::PkgConfig" : "1",
             "Glib" : "1.28"
          }
       }
@@ -57,5 +64,5 @@
       },
       "x_MailingList" : "https://mail.gnome.org/mailman/listinfo/gtk-perl-list"
    },
-   "version" : "0.015"
+   "version" : "0.016"
 }
