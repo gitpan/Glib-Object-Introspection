@@ -1,3 +1,9 @@
+Overview of changes in Glib::Object::Introspection 0.018
+========================================================
+
+* Fix registering unregistered enums.
+* Mark a few tests as known to fail so that they do not abort installation.
+
 Overview of changes in Glib::Object::Introspection 0.017
 ========================================================
 
