@@ -2,13 +2,15 @@
 abstract: 'Dynamically create Perl language bindings'
 author:
   - 'Glib::Object::Introspection Team <gtk-perl-list at gnome dot org>'
-build_requires: {}
+build_requires:
+  ExtUtils::MakeMaker: 0
 configure_requires:
   ExtUtils::Depends: 0.3
+  ExtUtils::MakeMaker: 0
   ExtUtils::PkgConfig: 1
   Glib: 1.28
 dynamic_config: 1
-generated_by: 'ExtUtils::MakeMaker version 6.66, CPAN::Meta::Converter version 2.132830'
+generated_by: 'ExtUtils::MakeMaker version 6.86, CPAN::Meta::Converter version 2.133380'
 license: lgpl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -24,6 +26,8 @@ no_index:
     - MY
     - Glib::Object::Introspection::_FuncWrapper
 requires:
+  ExtUtils::Depends: 0.3
+  ExtUtils::PkgConfig: 1
   Glib: 1.28
 resources:
   MailingList: https://mail.gnome.org/mailman/listinfo/gtk-perl-list
@@ -31,4 +35,4 @@ resources:
   homepage: http://gtk2-perl.sourceforge.net
   license: http://www.gnu.org/licenses/lgpl-2.1.html
   repository: git://git.gnome.org/perl-Glib-Object-Introspection
-version: 0.018
+version: 0.019

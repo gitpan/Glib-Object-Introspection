@@ -166,12 +166,12 @@ get_signal_info (GIBaseInfo *container_info, const gchar *signal_name)
 
 /* Caller owns return value. */
 static gchar *
-sythesize_gtype_name (GIBaseInfo *info)
+synthesize_gtype_name (GIBaseInfo *info)
 {
 	const gchar *namespace = g_base_info_get_namespace (info);
 	const gchar *name = g_base_info_get_name (info);
 	if (0 == strncmp (namespace, "GObject", 8) ||
-	    0 == strncmp (namespace, "GLib", 4))
+	    0 == strncmp (namespace, "GLib", 5))
 	{
 		namespace = "G";
 	}
@@ -180,12 +180,12 @@ sythesize_gtype_name (GIBaseInfo *info)
 
 /* Caller owns return value. */
 static gchar *
-sythesize_prefixed_gtype_name (GIBaseInfo *info)
+synthesize_prefixed_gtype_name (GIBaseInfo *info)
 {
 	const gchar *namespace = g_base_info_get_namespace (info);
 	const gchar *name = g_base_info_get_name (info);
 	if (0 == strncmp (namespace, "GObject", 8) ||
-	    0 == strncmp (namespace, "GLib", 4))
+	    0 == strncmp (namespace, "GLib", 5))
 	{
 		namespace = "G";
 	}
@@ -206,12 +206,12 @@ get_gtype (GIRegisteredTypeInfo *info)
 		}
 	}
 	if (!gtype || gtype == G_TYPE_NONE) {
-		gchar *full_name = sythesize_gtype_name (info);
+		gchar *full_name = synthesize_gtype_name (info);
 		gtype = g_type_from_name (full_name);
 		g_free (full_name);
 	}
 	if (!gtype || gtype == G_TYPE_NONE) {
-		gchar *full_name = sythesize_prefixed_gtype_name (info);
+		gchar *full_name = synthesize_prefixed_gtype_name (info);
 		gtype = g_type_from_name (full_name);
 		g_free (full_name);
 	}
