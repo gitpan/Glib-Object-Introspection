@@ -1,4 +1,4 @@
-# Copyright (C) 2010-2013 Torsten Schoenfeld <kaffeetisch@gmx.de>
+# Copyright (C) 2010-2014 Torsten Schoenfeld <kaffeetisch@gmx.de>
 #
 # This library is free software; you can redistribute it and/or modify it under
 # the terms of the GNU Library General Public License as published by the Free
@@ -10,9 +10,8 @@
 # FOR A PARTICULAR PURPOSE.  See the GNU Library General Public License for
 # more details.
 #
-# You should have received a copy of the GNU Library General Public License
-# along with this library; if not, write to the Free Software Foundation, Inc.,
-# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+# See the LICENSE file in the top-level directory of this distribution for the
+# full license terms.
 
 package Glib::Object::Introspection;
 
@@ -20,7 +19,7 @@ use strict;
 use warnings;
 use Glib;
 
-our $VERSION = '0.020';
+our $VERSION = '0.021';
 
 use Carp;
 $Carp::Internal{(__PACKAGE__)}++;
@@ -295,8 +294,8 @@ include gtk+, webkit, libsoup and many more.
 
 =head2 C<< Glib::Object::Introspection->setup >>
 
-To allow Glib::Object::Introspection to create bindings for a library, it must
-have installed a typelib file, for example
+To allow Glib::Object::Introspection to create bindings for a library, the
+library must have installed a typelib file, for example
 C<$prefix/lib/girepository-1.0/Gtk-3.0.typelib>.  In your code you then simply
 call C<< Glib::Object::Introspection->setup >> to set everything up.  This
 method takes a couple of key-value pairs as arguments.  These three are
@@ -330,8 +329,8 @@ The rest are optional:
 =item search_path => $search_path
 
 A path that should be used when looking for typelibs.  If you use typelibs from
-system directories, or if your environment is set up correctly, then this
-should not be necessary.
+system directories, or if your environment contains a properly set
+C<GI_TYPELIB_PATH> variable, then this should not be necessary.
 
 =item name_corrections => { auto_name => new_name, ... }
 
