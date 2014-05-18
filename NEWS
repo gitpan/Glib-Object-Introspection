@@ -1,8 +1,14 @@
+Overview of changes in Glib::Object::Introspection 0.023
+========================================================
+
+* Fix return value handling on big-endian architectures.
+
 Overview of changes in Glib::Object::Introspection 0.022
 ========================================================
 
 * Reset the 'release_status' flag to 'stable' so CPAN will index the release.
-  There are no functional changes from 0.021.
+  This reverts a change made in 61345ca2.  There are no functional changes
+  from release 0.021.
 
 Overview of changes in Glib::Object::Introspection 0.021
 ========================================================
