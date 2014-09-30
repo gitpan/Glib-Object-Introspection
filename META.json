@@ -4,7 +4,7 @@
       "Glib::Object::Introspection Team <gtk-perl-list at gnome dot org>"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "ExtUtils::MakeMaker version 6.86, CPAN::Meta::Converter version 2.133380",
+   "generated_by" : "ExtUtils::MakeMaker version 6.98, CPAN::Meta::Converter version 2.141520",
    "license" : [
       "lgpl_2_1"
    ],
@@ -63,7 +63,8 @@
          "url" : "git://git.gnome.org/perl-Glib-Object-Introspection",
          "web" : "http://git.gnome.org/browse/perl-Glib-Object-Introspection"
       },
+      "x_IRC" : "irc://irc.gimp.org/#gtk-perl",
       "x_MailingList" : "https://mail.gnome.org/mailman/listinfo/gtk-perl-list"
    },
-   "version" : "0.024"
+   "version" : "0.025"
 }
